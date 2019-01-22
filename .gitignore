@@ -31,3 +31,6 @@ project/plugins/project/
 .cache
 .lib/
 output/
+
+# Idea
+.idea
