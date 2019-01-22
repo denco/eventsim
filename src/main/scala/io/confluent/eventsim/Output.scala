@@ -7,6 +7,7 @@ import java.util.Properties
 import io.confluent.eventsim.config.ConfigFromFile
 import io.confluent.eventsim.events.Auth.Constructor
 import io.confluent.eventsim.events.StatusChange.{AvroConstructor, JSONConstructor}
+import org.apache.avro.file.DataFileWriter
 import org.apache.kafka.clients.producer.{KafkaProducer, ProducerConfig, ProducerRecord}
 
 /**
@@ -23,12 +24,34 @@ object Output {
   }
 
   private class FileEventWriter(val constructor: events.Constructor, val file: File) extends Object with canwrite {
-    val out = new FileOutputStream(file)
 
-    def write() = out.write(constructor.end().asInstanceOf[Array[Byte]])
+    val out  = if (Main.useAvro) {
+        val avro = constructor.asInstanceOf[events.AvroConstructor[Object]]
+        val avro_out = new DataFileWriter[Object](avro.datumWriter)
+        avro_out.create(avro.schema, file)
+      } else {
+         new FileOutputStream(file)
+      }
+
+    override def write(): Unit = {
+      val value: Object = if (Main.useAvro) {
+        constructor.asInstanceOf[events.AvroConstructor[Object]].end()
+      } else {
+        constructor.end()
+      }
+
+      if (Main.useAvro) {
+//        print("EVENT AVRO:", value)
+        out.asInstanceOf[DataFileWriter[Object]].append(value)
+      } else {
+//        print("EVENT JSON:", new String(value.asInstanceOf[Array[Byte]], JsonEncoding.UTF8.getJavaName))
+        out.asInstanceOf[FileOutputStream].write(value.asInstanceOf[Array[Byte]])
+      }
+    }
 
     override def flushAndClose(): Unit = {
-      out.flush(); out.close()
+      out.flush()
+      out.close()
     }
   }
 
@@ -58,6 +81,10 @@ object Output {
     }
   }
 
+  val fileNameExtension: String =
+    if (Main.useAvro) ".avro"
+    else ".json"
+
   val authConstructor: Constructor =
     if (Main.useAvro) new io.confluent.eventsim.events.Auth.AvroConstructor()
     else new io.confluent.eventsim.events.Auth.JSONConstructor()
@@ -82,16 +109,16 @@ object Output {
 
   val authEventWriter =
     if (kbl.isSupplied) new KafkaEventWriter(authConstructor, "auth_events", kbl.get.get)
-    else new FileEventWriter(authConstructor, new File(dirName, "auth_events"))
+    else new FileEventWriter(authConstructor, new File(dirName, "auth_events" + fileNameExtension))
   val listenEventWriter =
     if (kbl.isSupplied) new KafkaEventWriter(listenConstructor, "listen_events", kbl.get.get)
-    else new FileEventWriter(listenConstructor, new File(dirName, "listen_events"))
+    else new FileEventWriter(listenConstructor, new File(dirName, "listen_events" + fileNameExtension))
   val pageViewEventWriter =
     if (kbl.isSupplied) new KafkaEventWriter(pageViewConstructor, "page_view_events", kbl.get.get)
-    else new FileEventWriter(pageViewConstructor, new File(dirName, "page_view_events"))
+    else new FileEventWriter(pageViewConstructor, new File(dirName, "page_view_events" + fileNameExtension))
   val statusChangeEventWriter =
     if (kbl.isSupplied) new KafkaEventWriter(statusChangeConstructor, "status_change_events", kbl.get.get)
-    else new FileEventWriter(statusChangeConstructor, new File(dirName, "status_change_events"))
+    else new FileEventWriter(statusChangeConstructor, new File(dirName, "status_change_events" + fileNameExtension))
 
   def flushAndClose(): Unit = {
     authEventWriter.flushAndClose()
