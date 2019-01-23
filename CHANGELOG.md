@@ -1,6 +1,10 @@
 # EVENTSIM CHANGELOG
 
-## VERSION 2.1 @ 2018-01-23
+## VERSION 2.2 @ 2018-01-23
+
+- **feature** push events to AWS SNS Service
+
+## VERSION 2.1 @ 2018-01-22
 
 - **feature** add possibility to write AVRO files
 

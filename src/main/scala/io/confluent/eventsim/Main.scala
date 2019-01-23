@@ -11,11 +11,126 @@ import org.rogach.scallop.{ScallopConf, ScallopOption}
 import scala.collection.mutable
 
 object Main extends App {
+  val users = new mutable.PriorityQueue[User]()
+  val startTime = if (ConfFromOptions.startTimeArg.isSupplied) {
+    LocalDateTime.parse(ConfFromOptions.startTimeArg())
+  } else if (ConfigFromFile.startDate.nonEmpty) {
+    LocalDateTime.parse(ConfigFromFile.startDate.get)
+  } else {
+    LocalDateTime.now().minus(ConfFromOptions.from(), ChronoUnit.DAYS)
+  }
+  val endTime = if (ConfFromOptions.endTimeArg.isSupplied) {
+    LocalDateTime.parse(ConfFromOptions.endTimeArg())
+  } else if (ConfigFromFile.endDate.nonEmpty) {
+    LocalDateTime.parse(ConfigFromFile.endDate.get)
+  } else {
+    LocalDateTime.now().minus(ConfFromOptions.to(), ChronoUnit.DAYS)
+  }
+  val seed = if (ConfFromOptions.randomSeed.isSupplied)
+    ConfFromOptions.randomSeed.toOption.get.toLong
+  else
+    ConfigFromFile.seed
+  val tag = if (ConfFromOptions.tag.isSupplied)
+    ConfFromOptions.tag.get
+  else
+    ConfigFromFile.tag
+  val growthRate = if (ConfFromOptions.growthRate.isSupplied)
+    ConfFromOptions.growthRate.get
+  else
+    ConfigFromFile.growthRate
+
+  ConfigFromFile.configFileLoader(ConfFromOptions.configFile())
+  val realTime = ConfFromOptions.realTime.toOption.get
+  val useAvro = ConfFromOptions.useAvro.toOption.get
+  val pushToSNS = ConfFromOptions.pushToSNS.toOption.get
   private val sqrtE = Math.exp(0.5)
+  var nUsers = ConfigFromFile.nUsers.getOrElse(ConfFromOptions.nUsers())
+
+  def generateEvents() = {
+
+    (0 until nUsers).foreach((_) =>
+      users += new User(
+        ConfigFromFile.alpha * logNormalRandomValue,
+        ConfigFromFile.beta * logNormalRandomValue,
+        startTime,
+        ConfigFromFile.initialStates,
+        ConfigFromFile.authGenerator.randomThing,
+        UserProperties.randomProps,
+        DeviceProperties.randomProps,
+        ConfigFromFile.levelGenerator.randomThing
+      ))
+
+    val growthRate = ConfigFromFile.growthRate.getOrElse(ConfFromOptions.growthRate.toOption.get)
+    if (growthRate > 0) {
+      var current = startTime
+      while (current.isBefore(endTime)) {
+        val mu = Constants.SECONDS_PER_YEAR / (nUsers * growthRate)
+        current = current.plusSeconds(TimeUtilities.exponentialRandomValue(mu).toInt)
+        users += new User(
+          ConfigFromFile.alpha * logNormalRandomValue,
+          ConfigFromFile.beta * logNormalRandomValue,
+          current,
+          ConfigFromFile.initialStates,
+          ConfigFromFile.newUserAuth,
+          UserProperties.randomNewProps(current),
+          DeviceProperties.randomProps,
+          ConfigFromFile.newUserLevel
+        )
+        nUsers += 1
+      }
+    }
+    System.err.println("Initial number of users: " + ConfFromOptions.nUsers() + ", Final number of users: " + nUsers)
+
+    val startTimeString = startTime.toString
+    val endTimeString = endTime.toString
+    System.err.println("Start: " + startTimeString + ", End: " + endTimeString)
+
+    var lastTimeStamp = System.currentTimeMillis()
+
+    def showProgress(n: LocalDateTime, users: Int, e: Int): Unit = {
+      if ((e % 10000) == 0) {
+        val now = System.currentTimeMillis()
+        val rate = 10000000 / (now - lastTimeStamp)
+        lastTimeStamp = now
+        val message = // "Start: " + startTimeString + ", End: " + endTimeString + ", " +
+          "Now: " + n.toString + ", Events:" + e + ", Rate: " + rate + " eps"
+        System.err.write("\r".getBytes)
+        System.err.write(message.getBytes)
+      }
+    }
+
+    System.err.println("Starting to generate events.")
+    System.err.println("Damping=" + ConfigFromFile.damping + ", Weekend-Damping=" + ConfigFromFile.weekendDamping)
+
+    var clock = startTime
+    var events = 1
+
+    while (clock.isBefore(endTime)) {
+
+      if (realTime) {
+        val now = LocalDateTime.now()
+        val dif = Duration.between(clock, now)
+        if (dif.isNegative)
+          Thread.sleep(dif.abs.toMillis)
+      }
+
+      showProgress(clock, users.length, events)
+      val u = users.dequeue()
+      val prAttrition = nUsers * ConfFromOptions.attritionRate() *
+        (endTime.toEpochSecond(ZoneOffset.UTC) - startTime.toEpochSecond(ZoneOffset.UTC) / Constants.SECONDS_PER_YEAR)
+      clock = u.session.nextEventTimeStamp.get
+
+      if (clock.isAfter(startTime)) Output.writeEvents(u.session, u.device, u.userId, u.props)
+      u.nextEvent(prAttrition)
+      users += u
+      events += 1
+    }
+
+    Output.flushAndClose()
+
+  }
 
   def logNormalRandomValue = Math.exp(TimeUtilities.rng.nextGaussian()) / sqrtE
-
-  val users = new mutable.PriorityQueue[User]()
 
   object ConfFromOptions extends ScallopConf(args) {
     val nUsers: ScallopOption[Int] =
@@ -74,134 +189,12 @@ object Main extends App {
       descrYes = "continuous output", descrNo = "run all at once")
 
     val useAvro = toggle("useAvro", default = Some(false),
-      descrYes = "output data as Avro", descrNo = "output data as JSON")
+      descrYes = "output data as Avro", descrNo = "output data as AVRO")
+
+    val pushToSNS = toggle("pushToSNS", default = Some(false),
+      descrYes = "push events to SNS Service", descrNo = "output data as JSON")
 
     verify()
-  }
-
-  val startTime = if (ConfFromOptions.startTimeArg.isSupplied) {
-    LocalDateTime.parse(ConfFromOptions.startTimeArg())
-  } else if (ConfigFromFile.startDate.nonEmpty) {
-    LocalDateTime.parse(ConfigFromFile.startDate.get)
-  } else {
-    LocalDateTime.now().minus(ConfFromOptions.from(), ChronoUnit.DAYS)
-  }
-
-  val endTime = if (ConfFromOptions.endTimeArg.isSupplied) {
-    LocalDateTime.parse(ConfFromOptions.endTimeArg())
-  } else if (ConfigFromFile.endDate.nonEmpty) {
-    LocalDateTime.parse(ConfigFromFile.endDate.get)
-  } else {
-    LocalDateTime.now().minus(ConfFromOptions.to(), ChronoUnit.DAYS)
-  }
-
-  ConfigFromFile.configFileLoader(ConfFromOptions.configFile())
-
-  var nUsers = ConfigFromFile.nUsers.getOrElse(ConfFromOptions.nUsers())
-
-  val seed = if (ConfFromOptions.randomSeed.isSupplied)
-    ConfFromOptions.randomSeed.get.get.toLong
-  else
-    ConfigFromFile.seed
-
-
-  val tag = if (ConfFromOptions.tag.isSupplied)
-    ConfFromOptions.tag.get
-  else
-    ConfigFromFile.tag
-
-  val growthRate = if (ConfFromOptions.growthRate.isSupplied)
-    ConfFromOptions.growthRate.get
-  else
-    ConfigFromFile.growthRate
-
-  val realTime = ConfFromOptions.realTime.get.get
-
-  val useAvro = ConfFromOptions.useAvro.get.get
-
-  def generateEvents() = {
-
-    (0 until nUsers).foreach((_) =>
-      users += new User(
-        ConfigFromFile.alpha * logNormalRandomValue,
-        ConfigFromFile.beta * logNormalRandomValue,
-        startTime,
-        ConfigFromFile.initialStates,
-        ConfigFromFile.authGenerator.randomThing,
-        UserProperties.randomProps,
-        DeviceProperties.randomProps,
-        ConfigFromFile.levelGenerator.randomThing
-      ))
-
-    val growthRate = ConfigFromFile.growthRate.getOrElse(ConfFromOptions.growthRate.get.get)
-    if (growthRate > 0) {
-      var current = startTime
-      while (current.isBefore(endTime)) {
-        val mu = Constants.SECONDS_PER_YEAR / (nUsers * growthRate)
-        current = current.plusSeconds(TimeUtilities.exponentialRandomValue(mu).toInt)
-        users += new User(
-          ConfigFromFile.alpha * logNormalRandomValue,
-          ConfigFromFile.beta * logNormalRandomValue,
-          current,
-          ConfigFromFile.initialStates,
-          ConfigFromFile.newUserAuth,
-          UserProperties.randomNewProps(current),
-          DeviceProperties.randomProps,
-          ConfigFromFile.newUserLevel
-        )
-        nUsers += 1
-      }
-    }
-    System.err.println("Initial number of users: " + ConfFromOptions.nUsers() + ", Final number of users: " + nUsers)
-
-    val startTimeString = startTime.toString
-    val endTimeString = endTime.toString
-    System.err.println("Start: " + startTimeString + ", End: " + endTimeString)
-
-    var lastTimeStamp = System.currentTimeMillis()
-    def showProgress(n: LocalDateTime, users: Int, e: Int): Unit = {
-      if ((e % 10000) == 0) {
-        val now = System.currentTimeMillis()
-        val rate = 10000000 / (now - lastTimeStamp)
-        lastTimeStamp = now
-        val message = // "Start: " + startTimeString + ", End: " + endTimeString + ", " +
-          "Now: " + n.toString + ", Events:" + e + ", Rate: " + rate + " eps"
-        System.err.write("\r".getBytes)
-        System.err.write(message.getBytes)
-      }
-    }
-    System.err.println("Starting to generate events.")
-    System.err.println("Damping=" + ConfigFromFile.damping + ", Weekend-Damping=" + ConfigFromFile.weekendDamping)
-
-    var clock = startTime
-    var events = 1
-
-    while (clock.isBefore(endTime)) {
-
-      if (realTime) {
-        val now = LocalDateTime.now()
-        val dif = Duration.between(clock, now)
-        if (dif.isNegative)
-          Thread.sleep(dif.abs.toMillis)
-      }
-
-      showProgress(clock, users.length, events)
-      val u = users.dequeue()
-      val prAttrition = nUsers * ConfFromOptions.attritionRate() *
-        (endTime.toEpochSecond(ZoneOffset.UTC) - startTime.toEpochSecond(ZoneOffset.UTC) / Constants.SECONDS_PER_YEAR)
-      clock = u.session.nextEventTimeStamp.get
-
-      if (clock.isAfter(startTime)) Output.writeEvents(u.session, u.device, u.userId, u.props)
-      u.nextEvent(prAttrition)
-      users += u
-      events += 1
-    }
-
-    System.err.println("")
-    System.err.println()
-
-    Output.flushAndClose()
-
   }
 
   if (ConfFromOptions.generateCounts())

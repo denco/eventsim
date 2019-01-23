@@ -1,8 +1,8 @@
 name := "eventsim"
 
-version := "2.1"
+version := "2.2"
 
-scalaVersion := "2.12.7"
+scalaVersion := "2.12.8"
 
 libraryDependencies ++= Seq(
   "org.apache.avro" % "avro" % "1.8.2" % Provided,
@@ -12,9 +12,8 @@ libraryDependencies ++= Seq(
   "com.fasterxml.jackson.core" % "jackson-core" % "2.7.0",
   "com.fasterxml.jackson.core" % "jackson-databind" % "2.7.0",
   "org.apache.kafka" % "kafka-clients" % "0.9.0.0",
-  "org.scala-lang.modules" %% "scala-parser-combinators" % "1.0.4"
+  "org.scala-lang.modules" %% "scala-parser-combinators" % "1.0.4",
+  "software.amazon.awssdk" % "sns" % "2.3.6" exclude ("io.netty", "*"),
+  "org.slf4j" % "slf4j-log4j12" % "1.7.25"
 )
 
-
-
-//libraryDependencies += "io.confluent" % "kafka-avro-serializer" % "5.0.0"
