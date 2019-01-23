@@ -1,6 +1,6 @@
 name := "eventsim"
 
-version := "2.1"
+version := "2.2"
 
 scalaVersion := "2.12.8"
 

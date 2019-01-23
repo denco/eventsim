@@ -5,7 +5,8 @@ Eventsim is a program that generates event data for testing and demos. It's writ
 big data hipsters (at least sometimes). It's designed to replicate page requests for a fake music
 web site (picture something like Spotify); the results look like real use data, but are totally fake. You can
 configure the program to create as much data as you want: data for just a few users for a few hours, or data for a
-huge number of users of users over many years. You can write the data to files, or pipe it out to Apache Kafka.
+huge number of users of users over many years. You can write the data to files, pipe it out to Apache Kafka or push
+to AWS SNS Service.
 
 You can use the fake data for product development, correctness testing, demos, performance testing, training, or in any
 other place where a stream of real looking data is useful. You probably shouldn't use this data to research machine
@@ -142,6 +143,7 @@ The program can accept a number of command line options:
           -t, --to  <arg>                to y days ago (default = 1)
               --useAvro                  output data as Avro
               --nouseAvro                output data as JSON
+              --pushToSNS                push data to AWS SNS Service
           -u, --userid  <arg>            first user id (default = 1)
           -v, --verbose                  verbose output (not implemented yet)
               --noverbose                silent mode
