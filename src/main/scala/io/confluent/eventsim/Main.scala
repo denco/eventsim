@@ -74,7 +74,10 @@ object Main extends App {
       descrYes = "continuous output", descrNo = "run all at once")
 
     val useAvro = toggle("useAvro", default = Some(false),
-      descrYes = "output data as Avro", descrNo = "output data as JSON")
+      descrYes = "output data as Avro", descrNo = "output data as AVRO")
+
+    val pushToSNS = toggle("pushToSNS", default = Some(false),
+      descrYes = "push events to SNS Service", descrNo = "output data as JSON")
 
     verify()
   }
@@ -100,10 +103,9 @@ object Main extends App {
   var nUsers = ConfigFromFile.nUsers.getOrElse(ConfFromOptions.nUsers())
 
   val seed = if (ConfFromOptions.randomSeed.isSupplied)
-    ConfFromOptions.randomSeed.get.get.toLong
+    ConfFromOptions.randomSeed.toOption.get.toLong
   else
     ConfigFromFile.seed
-
 
   val tag = if (ConfFromOptions.tag.isSupplied)
     ConfFromOptions.tag.get
@@ -115,9 +117,11 @@ object Main extends App {
   else
     ConfigFromFile.growthRate
 
-  val realTime = ConfFromOptions.realTime.get.get
+  val realTime = ConfFromOptions.realTime.toOption.get
 
-  val useAvro = ConfFromOptions.useAvro.get.get
+  val useAvro = ConfFromOptions.useAvro.toOption.get
+
+  val pushToSNS = ConfFromOptions.pushToSNS.toOption.get
 
   def generateEvents() = {
 
@@ -133,7 +137,7 @@ object Main extends App {
         ConfigFromFile.levelGenerator.randomThing
       ))
 
-    val growthRate = ConfigFromFile.growthRate.getOrElse(ConfFromOptions.growthRate.get.get)
+    val growthRate = ConfigFromFile.growthRate.getOrElse(ConfFromOptions.growthRate.toOption.get)
     if (growthRate > 0) {
       var current = startTime
       while (current.isBefore(endTime)) {
@@ -196,10 +200,7 @@ object Main extends App {
       users += u
       events += 1
     }
-
-    System.err.println("")
-    System.err.println()
-
+    
     Output.flushAndClose()
 
   }
