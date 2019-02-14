@@ -2,9 +2,17 @@ package io.confluent.eventsim
 
 import java.io.{File, FileOutputStream}
 import java.time.ZoneOffset
+import java.util
 import java.util.Properties
+import java.util.concurrent.TimeUnit
 
 import com.fasterxml.jackson.core.JsonEncoding
+import com.google.api.core.{ApiFuture, ApiFutures}
+import com.google.api.gax.rpc.ApiException
+import com.google.cloud.ServiceOptions
+import com.google.cloud.pubsub.v1.{Publisher, TopicAdminClient}
+import com.google.protobuf.ByteString
+import com.google.pubsub.v1.{ProjectTopicName, PubsubMessage}
 import io.confluent.eventsim.config.ConfigFromFile
 import io.confluent.eventsim.events.Auth.Constructor
 import io.confluent.eventsim.events.StatusChange.{AvroConstructor, JSONConstructor}
@@ -41,8 +49,10 @@ object Output {
   val statusChangeConstructor: io.confluent.eventsim.events.StatusChange.Constructor =
     if (Main.useAvro) new AvroConstructor()
     else new JSONConstructor()
+
   val kbl = Main.ConfFromOptions.kafkaBrokerList
   val pushToSNS = Main.ConfFromOptions.pushToSNS
+  val pushToPubSub = Main.ConfFromOptions.pushToPubSub
   val dirName = new File(if (Main.ConfFromOptions.outputDir.isSupplied) Main.ConfFromOptions.outputDir.get.get else "output")
   val authOutputName = "auth_events"
   val listenOutputName = "listen_events"
@@ -54,18 +64,22 @@ object Output {
   val authEventWriter =
     if (kbl.isSupplied) new KafkaEventWriter(authConstructor, authOutputName, kbl.toOption.get)
     else if (pushToSNS.toOption.get) new SNSEventWriter(authConstructor, authOutputName)
+    else if (pushToPubSub.toOption.get) new PubSubEventWriter(authConstructor, authOutputName)
     else new FileEventWriter(authConstructor, new File(dirName, authOutputName + fileNameExtension))
   val listenEventWriter =
     if (kbl.isSupplied) new KafkaEventWriter(listenConstructor, listenOutputName, kbl.toOption.get)
     else if (pushToSNS.toOption.get) new SNSEventWriter(listenConstructor, listenOutputName)
+    else if (pushToPubSub.toOption.get) new PubSubEventWriter(listenConstructor, listenOutputName)
     else new FileEventWriter(listenConstructor, new File(dirName, listenOutputName + fileNameExtension))
   val pageViewEventWriter =
     if (kbl.isSupplied) new KafkaEventWriter(pageViewConstructor, pageViewOutputName, kbl.toOption.get)
     else if (pushToSNS.toOption.get) new SNSEventWriter(pageViewConstructor, pageViewOutputName)
+    else if (pushToPubSub.toOption.get) new PubSubEventWriter(pageViewConstructor, pageViewOutputName)
     else new FileEventWriter(pageViewConstructor, new File(dirName, pageViewOutputName + fileNameExtension))
   val statusChangeEventWriter =
     if (kbl.isSupplied) new KafkaEventWriter(statusChangeConstructor, statusChangeOutputName, kbl.toOption.get)
     else if (pushToSNS.toOption.get) new SNSEventWriter(statusChangeConstructor, statusChangeOutputName)
+    else if (pushToPubSub.toOption.get) new PubSubEventWriter(statusChangeConstructor, statusChangeOutputName)
     else new FileEventWriter(statusChangeConstructor, new File(dirName, statusChangeOutputName + fileNameExtension))
 
   def flushAndClose(): Unit = {
@@ -212,6 +226,65 @@ object Output {
 
     override def flushAndClose(): Unit = {
       sns.close()
+    }
+
+  }
+
+  private class PubSubEventWriter(val constructor: events.Constructor, val topic: String) extends Object with canwrite {
+
+    private val projectId = ServiceOptions.getDefaultProjectId
+
+    // Create a new topic
+    val gcpTopic: ProjectTopicName = try {
+      val topicAdminClient = TopicAdminClient.create
+      try {
+        // projectId <=  unique project identifier, eg. "my-project-id"
+        // topicId <= "my-topic-id"
+        val topicName = ProjectTopicName.of(projectId, topic)
+        topicAdminClient.createTopic(topicName)
+        topicName
+      } catch {
+        case ae: ApiException => {
+          // example : code = ALREADY_EXISTS(409) implies topic already exists
+          val topicName = ProjectTopicName.of(projectId, topic)
+          log.debug(s"Topic: ${topicName} already exists")
+          topicName
+        }
+      }
+      finally if (topicAdminClient != null) topicAdminClient.close()
+    }
+
+    log.info(s"Following topic id ${gcpTopic} will be used.\n")
+    val publisher = Publisher.newBuilder(gcpTopic).build
+
+    override def write(): Unit = {
+
+      val msg = new String(constructor.end().asInstanceOf[Array[Byte]], JsonEncoding.UTF8.getJavaName)
+      log.debug(s"Will publish to Topic: ${gcpTopic}; MSG: ${msg}")
+
+      val futures = new util.ArrayList[ApiFuture[String]]
+
+      try {
+        // Create a publisher instance with default settings bound to the topic
+          // convert message to bytes
+          val data = ByteString.copyFromUtf8(msg)
+          val pubsubMessage = PubsubMessage.newBuilder.setData(data).build
+          // Schedule a message to be published. Messages are automatically batched.
+          val future = publisher.publish(pubsubMessage)
+          futures.add(future)
+      } finally {
+        // Wait on any pending requests
+        val messageIds = ApiFutures.allAsList(futures).get
+        import scala.collection.JavaConversions._
+        for (messageId <- messageIds) {
+          log.debug(s"Message with MessageId: ${messageId} was published")
+        }
+      }
+    }
+
+    override def flushAndClose(): Unit = {
+      publisher.shutdown()
+      publisher.awaitTermination(1, TimeUnit.MINUTES)
     }
 
   }

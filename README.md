@@ -144,6 +144,7 @@ The program can accept a number of command line options:
               --useAvro                  output data as Avro
               --nouseAvro                output data as JSON
               --pushToSNS                push data to AWS SNS Service
+              --pushToPubSub             push data to GCP Pub/Sub Service
           -u, --userid  <arg>            first user id (default = 1)
           -v, --verbose                  verbose output (not implemented yet)
               --noverbose                silent mode

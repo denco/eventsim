@@ -1,5 +1,9 @@
 # EVENTSIM CHANGELOG
 
+## VERSION 2.3 @ 2018-02-14
+
+- **feature** push events to GCP Pub/Sub Service
+
 ## VERSION 2.2 @ 2018-01-23
 
 - **feature** push events to AWS SNS Service

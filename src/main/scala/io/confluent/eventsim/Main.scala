@@ -192,7 +192,10 @@ object Main extends App {
       descrYes = "output data as Avro", descrNo = "output data as AVRO")
 
     val pushToSNS = toggle("pushToSNS", default = Some(false),
-      descrYes = "push events to SNS Service", descrNo = "output data as JSON")
+      descrYes = "push events to AWS SNS Service", descrNo = "output data as JSON to SNS")
+
+    val pushToPubSub = toggle("pushToPubSub", default = Some(false),
+      descrYes = "push events to GCP Pub/Sub Service", descrNo = "output data as JSON to Pub/Sub")
 
     verify()
   }

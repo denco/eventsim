@@ -1,6 +1,6 @@
 name := "eventsim"
 
-version := "2.2"
+version := "2.3"
 
 scalaVersion := "2.12.8"
 
@@ -14,6 +14,7 @@ libraryDependencies ++= Seq(
   "org.apache.kafka" % "kafka-clients" % "0.9.0.0",
   "org.scala-lang.modules" %% "scala-parser-combinators" % "1.0.4",
   "software.amazon.awssdk" % "sns" % "2.3.6" exclude ("io.netty", "*"),
-  "org.slf4j" % "slf4j-log4j12" % "1.7.25"
+  "org.slf4j" % "slf4j-log4j12" % "1.7.25",
+  "com.google.cloud" % "google-cloud-pubsub" % "1.59.0"
 )
 
