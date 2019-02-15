@@ -4,6 +4,8 @@ version := "2.3"
 
 scalaVersion := "2.12.8"
 
+
+
 libraryDependencies ++= Seq(
   "org.apache.avro" % "avro" % "1.8.2" % Provided,
   "org.apache.commons" % "commons-math3" % "3.6",
@@ -13,8 +15,16 @@ libraryDependencies ++= Seq(
   "com.fasterxml.jackson.core" % "jackson-databind" % "2.7.0",
   "org.apache.kafka" % "kafka-clients" % "0.9.0.0",
   "org.scala-lang.modules" %% "scala-parser-combinators" % "1.0.4",
-  "software.amazon.awssdk" % "sns" % "2.3.6" exclude ("io.netty", "*"),
+//  "software.amazon.awssdk" % "sns" % "2.3.6" exclude ("io.netty", "*"),
   "org.slf4j" % "slf4j-log4j12" % "1.7.25",
-  "com.google.cloud" % "google-cloud-pubsub" % "1.59.0"
+//  "com.google.cloud" % "google-cloud-pubsub" % "1.59.0",
+  "software.amazon.awssdk" % "kinesis" % "2.3.6"
+//    exclude ("io.netty", "*"),
+//  "io.netty" % "netty-handler" % "4.1.32.Final"
 )
 
+
+assemblyMergeStrategy in assembly := {
+  case PathList("META-INF", xs @ _*) => MergeStrategy.discard
+  case x => MergeStrategy.first
+}

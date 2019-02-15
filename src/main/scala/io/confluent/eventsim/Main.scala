@@ -197,6 +197,9 @@ object Main extends App {
     val pushToPubSub = toggle("pushToPubSub", default = Some(false),
       descrYes = "push events to GCP Pub/Sub Service", descrNo = "output data as JSON to Pub/Sub")
 
+    val pushToKinesis = toggle("pushToKinesis", default = Some(false),
+      descrYes = "push events to AWS Kinesis Service", descrNo = "output data as JSON to Kinesis")
+
     verify()
   }
 
